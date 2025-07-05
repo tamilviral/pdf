@@ -6,6 +6,87 @@
     <title>PDF to Word Converter</title>
     <link rel="stylesheet" href="styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        /* Basic styles to ensure functionality if external CSS fails */
+        body {
+            font-family: 'Poppins', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f7fa;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .converter-box {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .drop-zone {
+            border: 2px dashed #ccc;
+            border-radius: 5px;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 20px;
+            cursor: pointer;
+        }
+        .drop-zone--over {
+            border-color: #4a6cf7;
+        }
+        .btn {
+            background: #4a6cf7;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+            margin-top: 15px;
+        }
+        .progress-container {
+            margin-top: 20px;
+        }
+        .progress-bar {
+            height: 10px;
+            background: #e0e0e0;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        .progress-bar::after {
+            content: '';
+            display: block;
+            height: 100%;
+            width: 0%;
+            background: #4a6cf7;
+            transition: width 0.3s ease;
+        }
+        .error-container {
+            color: #e74c3c;
+            margin-top: 15px;
+        }
+        .download-container {
+            text-align: center;
+            margin-top: 20px;
+        }
+        .download-btn {
+            display: inline-block;
+            background: #2ecc71;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 5px;
+            text-decoration: none;
+            margin-right: 10px;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
@@ -27,9 +108,12 @@
                 </label>
             </div>
 
-            <button id="convertBtn" class="btn">Convert to Word</button>
+            <button id="convertBtn" class="btn" disabled>Convert to Word</button>
+            
             <div id="progressContainer" class="progress-container" style="display: none;">
-                <div id="progressBar" class="progress-bar"></div>
+                <div class="progress-bar">
+                    <div id="progressBar" style="width: 0%; height: 100%; background: #4a6cf7;"></div>
+                </div>
                 <span id="progressText">0%</span>
             </div>
 
@@ -46,6 +130,156 @@
         </footer>
     </div>
 
-    <script src="script.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // DOM Elements
+            const dropZone = document.getElementById('dropZone');
+            const fileInput = document.getElementById('fileInput');
+            const convertBtn = document.getElementById('convertBtn');
+            const progressContainer = document.getElementById('progressContainer');
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            const downloadContainer = document.getElementById('downloadContainer');
+            const downloadLink = document.getElementById('downloadLink');
+            const convertAnother = document.getElementById('convertAnother');
+            const errorContainer = document.getElementById('errorContainer');
+            const preserveFormatting = document.getElementById('preserveFormatting');
+
+            let selectedFile = null;
+
+            // Prevent default drag behaviors
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, preventDefaults, false);
+                document.body.addEventListener(eventName, preventDefaults, false);
+            });
+
+            // Highlight drop zone when item is dragged over it
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, highlight, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, unhighlight, false);
+            });
+
+            // Handle dropped files
+            dropZone.addEventListener('drop', handleDrop, false);
+
+            // Handle file selection via click
+            fileInput.addEventListener('change', handleFileSelect);
+
+            // Convert button click handler
+            convertBtn.addEventListener('click', convertFile);
+
+            // Convert another button handler
+            convertAnother.addEventListener('click', resetConverter);
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            function highlight() {
+                dropZone.classList.add('drop-zone--over');
+            }
+
+            function unhighlight() {
+                dropZone.classList.remove('drop-zone--over');
+            }
+
+            function handleDrop(e) {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                handleFiles(files);
+            }
+
+            function handleFileSelect() {
+                handleFiles(this.files);
+            }
+
+            function handleFiles(files) {
+                if (files.length) {
+                    const file = files[0];
+                    if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+                        selectedFile = file;
+                        convertBtn.disabled = false;
+                        dropZone.querySelector('.drop-zone__prompt').textContent = file.name;
+                        errorContainer.textContent = '';
+                    } else {
+                        errorContainer.textContent = 'Please upload a PDF file';
+                    }
+                }
+            }
+
+            function convertFile() {
+                if (!selectedFile) return;
+
+                // Disable convert button and show progress
+                convertBtn.disabled = true;
+                progressContainer.style.display = 'block';
+                errorContainer.textContent = '';
+
+                // Create FormData and append file
+                const formData = new FormData();
+                formData.append('pdf', selectedFile);
+                formData.append('preserveFormatting', preserveFormatting.checked);
+
+                // Create XMLHttpRequest
+                const xhr = new XMLHttpRequest();
+
+                // Progress tracking
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        const percentComplete = Math.round((e.loaded / e.total) * 100);
+                        progressBar.style.width = percentComplete + '%';
+                        progressText.textContent = percentComplete + '%';
+                    }
+                };
+
+                // Handle response
+                xhr.onload = () => {
+                    if (xhr.status === 200) {
+                        try {
+                            const response = JSON.parse(xhr.responseText);
+                            if (response.success && response.downloadUrl) {
+                                // Show download options
+                                downloadLink.href = response.downloadUrl;
+                                downloadLink.download = selectedFile.name.replace('.pdf', '.docx') || 'converted.docx';
+                                downloadContainer.style.display = 'block';
+                            } else {
+                                errorContainer.textContent = response.message || 'Conversion failed';
+                            }
+                        } catch (e) {
+                            errorContainer.textContent = 'Error processing response';
+                        }
+                    } else {
+                        errorContainer.textContent = 'Error: ' + xhr.statusText;
+                    }
+                };
+
+                // Handle errors
+                xhr.onerror = () => {
+                    errorContainer.textContent = 'Request failed. Please try again.';
+                };
+
+                // Send request
+                xhr.open('POST', '/convert', true);
+                xhr.send(formData);
+            }
+
+            function resetConverter() {
+                // Reset all elements to initial state
+                selectedFile = null;
+                fileInput.value = '';
+                convertBtn.disabled = true;
+                progressContainer.style.display = 'none';
+                downloadContainer.style.display = 'none';
+                progressBar.style.width = '0%';
+                progressText.textContent = '0%';
+                dropZone.querySelector('.drop-zone__prompt').textContent = 'Drop PDF file here or click to upload';
+                errorContainer.textContent = '';
+            }
+        });
+    </script>
 </body>
 </html>
